@@ -7,15 +7,19 @@ using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
-
-// Реєстрація контексту даних та провайдера SQLite.
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite(connectionString));
+
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
+});
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -33,7 +37,6 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 builder.Services.AddAuthorization();
-
 
 builder.Services.AddEndpointsApiExplorer();
 
@@ -57,10 +60,9 @@ builder.Services.AddSwaggerGen(options =>
     });
 
     options.AddSecurityRequirement(doc => new OpenApiSecurityRequirement
-{
-    { new OpenApiSecuritySchemeReference("Bearer", doc), new List<string>() }
-});
-
+    {
+        { new OpenApiSecuritySchemeReference("Bearer", doc), new List<string>() }
+    });
 });
 
 var app = builder.Build();
@@ -68,9 +70,9 @@ var app = builder.Build();
 app.UseAuthentication();
 app.UseAuthorization();
 
-
 app.MapGet("/", () => "MVP Back-End: CRUD-ендпоінти працюють!");
 
+// AUTH
 app.MapPost("/auth/register", async (RegisterDto dto, AppDbContext db) =>
 {
     if (await db.Users.AnyAsync(u => u.Email == dto.Email))
@@ -87,64 +89,20 @@ app.MapPost("/auth/register", async (RegisterDto dto, AppDbContext db) =>
     await db.SaveChangesAsync();
     return Results.Created($"/users/{user.Id}",
         new { user.Id, user.Name, user.Email, user.Role });
-})
-    .WithTags("Auth");
-
-
-
-
-// READ: отримати всі записи
-app.MapGet("/users", async (AppDbContext db) => 
-    await db.Users.ToListAsync()).WithTags("Users");
-
-
-// READ: отримати один запис за Id
-app.MapGet("/users/{id}", async (int id, AppDbContext db) =>
-    await db.Users.FindAsync(id) is User user
-        ? Results.Ok(user)
-        : Results.NotFound()).WithTags("Users");
-
-// CREATE: додати новий запис
-app.MapPost("/users", async (User user, AppDbContext db) =>
-{
-    db.Users.Add(user);
-    await db.SaveChangesAsync();
-    return Results.Created($"/users/{user.Id}", user);
-}).WithTags("Users");
-
-// UPDATE: оновити наявний запис
-app.MapPut("/users/{id}", async (int id, User input, AppDbContext db) =>
-{
-var user = await db.Users.FindAsync(id);
-if (user is null) return Results.NotFound();
-
-    user.Name = input.Name;
-    user.Email = input.Email;
-    await db.SaveChangesAsync();
-    return Results.NoContent();
-}).WithTags("Users");
-// DELETE: видалити запис
-app.MapDelete("/users/{id}", async (int id, AppDbContext db) =>
-{
-    var user = await db.Users.FindAsync(id);
-    if (user is null) return Results.NotFound();
-
-    db.Users.Remove(user);
-    await db.SaveChangesAsync();
-    return Results.NoContent();
-}).WithTags("Users");
-
+}).WithTags("Auth");
 
 app.MapPost("/auth/login", async (LoginDto dto, AppDbContext db, IConfiguration config) =>
 {
     var user = await db.Users.FirstOrDefaultAsync(u => u.Email == dto.Email);
-    if (user is null || !BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash))
+    if (user is null || string.IsNullOrEmpty(user.PasswordHash))
+        return Results.Unauthorized();
+
+    if (!BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash))
         return Results.Unauthorized();
 
     var token = CreateToken(user, config);
     return Results.Ok(new { access_token = token, token_type = "Bearer" });
-})
-    .WithTags("Auth");
+}).WithTags("Auth");
 
 app.MapGet("/auth/me", (ClaimsPrincipal principal) =>
 {
@@ -158,9 +116,113 @@ app.MapGet("/auth/me", (ClaimsPrincipal principal) =>
 .RequireAuthorization()
 .WithTags("Auth");
 
+// USERS
+app.MapGet("/users", async (AppDbContext db) =>
+    await db.Users.ToListAsync()).WithTags("Users");
+
+app.MapGet("/users/{id}", async (int id, AppDbContext db) =>
+    await db.Users.FindAsync(id) is User user
+        ? Results.Ok(user)
+        : Results.NotFound()).WithTags("Users");
+
+app.MapPost("/users", async (User user, AppDbContext db) =>
+{
+    db.Users.Add(user);
+    await db.SaveChangesAsync();
+    return Results.Created($"/users/{user.Id}", user);
+}).WithTags("Users");
+
+app.MapPut("/users/{id}", async (int id, User input, AppDbContext db) =>
+{
+    var user = await db.Users.FindAsync(id);
+    if (user is null) return Results.NotFound();
+
+    user.Name = input.Name;
+    user.Email = input.Email;
+    await db.SaveChangesAsync();
+    return Results.NoContent();
+}).WithTags("Users");
+
+app.MapPut("/users/{id}", async (int id, UpdateUserDto input, AppDbContext db) =>
+{
+    var user = await db.Users.FindAsync(id);
+    if (user is null) return Results.NotFound();
+
+    user.Name = input.Name;
+    user.Email = input.Email;
+    await db.SaveChangesAsync();
+    return Results.NoContent();
+}).WithTags("Users");
+
+
+// FIGURES
+app.MapGet("/figures", async (AppDbContext db) =>
+    await db.Figures.ToListAsync())
+    .WithTags("Figures");
+
+// BOX
+const int BOX_PRICE = 100;
+
+app.MapPost("/box/open", async (ClaimsPrincipal principal, AppDbContext db) =>
+{
+    var userId = int.Parse(principal.FindFirstValue(ClaimTypes.NameIdentifier)!);
+    var user = await db.Users.FindAsync(userId);
+    if (user is null) return Results.NotFound();
+
+    if (user.Balance < BOX_PRICE)
+        return Results.BadRequest("Недостатньо коштів на балансі.");
+
+    var figures = await db.Figures.ToListAsync();
+    if (figures.Count == 0)
+        return Results.Problem("Каталог фігурок порожній.");
+
+    var totalWeight = figures.Sum(f => f.DropWeight);
+    var roll = Random.Shared.Next(0, totalWeight);
+
+    LabubuFigure? wonFigure = null;
+    var cumulative = 0;
+    foreach (var figure in figures)
+    {
+        cumulative += figure.DropWeight;
+        if (roll < cumulative)
+        {
+            wonFigure = figure;
+            break;
+        }
+    }
+    wonFigure ??= figures[^1];
+
+    user.Balance -= BOX_PRICE;
+
+    var item = new InventoryItem
+    {
+        UserId = userId,
+        FigureId = wonFigure.Id,
+        ObtainedAt = DateTime.UtcNow
+    };
+    db.InventoryItems.Add(item);
+    await db.SaveChangesAsync();
+
+    return Results.Ok(new { Figure = wonFigure, BalanceAfter = user.Balance });
+})
+.RequireAuthorization()
+.WithTags("Box");
+
+app.MapGet("/inventory", async (ClaimsPrincipal principal, AppDbContext db) =>
+{
+    var userId = int.Parse(principal.FindFirstValue(ClaimTypes.NameIdentifier)!);
+    var items = await db.InventoryItems
+        .Where(i => i.UserId == userId)
+        .Include(i => i.Figure)
+        .OrderByDescending(i => i.ObtainedAt)
+        .ToListAsync();
+    return Results.Ok(items);
+})
+.RequireAuthorization()
+.WithTags("Box");
+
 app.UseSwagger();
 app.UseSwaggerUI();
-
 
 app.Run();
 
@@ -184,5 +246,5 @@ static string CreateToken(User user, IConfiguration config)
 }
 
 record RegisterDto(string Name, string Email, string Password);
-
 record LoginDto(string Email, string Password);
+record UpdateUserDto(string Name, string Email);

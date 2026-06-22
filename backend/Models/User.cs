@@ -7,4 +7,6 @@ public class User
     public string Email { get; set; } = string.Empty;
     public string PasswordHash { get; set; } = string.Empty;
     public string Role { get; set; } = "user";
+    public int Balance { get; set; } = 1000;
+    public List<InventoryItem> Inventory { get; set; } = new();
 }
