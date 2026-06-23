@@ -44,9 +44,9 @@ builder.Services.AddSwaggerGen(options =>
 {
     options.SwaggerDoc("v1", new OpenApiInfo
     {
-        Title = "MVP Back-End API",
+        Title = "Lets choose your labubu",
         Version = "v1",
-        Description = "Документація REST API навчального MVP-проєкту."
+        Description = "Whicn labubu are you getting today"
     });
 
     options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
@@ -66,6 +66,10 @@ builder.Services.AddSwaggerGen(options =>
 });
 
 var app = builder.Build();
+
+app.UseSwagger();
+app.UseSwaggerUI();
+
 
 app.UseAuthentication();
 app.UseAuthorization();
@@ -132,16 +136,6 @@ app.MapPost("/users", async (User user, AppDbContext db) =>
     return Results.Created($"/users/{user.Id}", user);
 }).WithTags("Users");
 
-app.MapPut("/users/{id}", async (int id, User input, AppDbContext db) =>
-{
-    var user = await db.Users.FindAsync(id);
-    if (user is null) return Results.NotFound();
-
-    user.Name = input.Name;
-    user.Email = input.Email;
-    await db.SaveChangesAsync();
-    return Results.NoContent();
-}).WithTags("Users");
 
 app.MapPut("/users/{id}", async (int id, UpdateUserDto input, AppDbContext db) =>
 {
@@ -221,8 +215,6 @@ app.MapGet("/inventory", async (ClaimsPrincipal principal, AppDbContext db) =>
 .RequireAuthorization()
 .WithTags("Box");
 
-app.UseSwagger();
-app.UseSwaggerUI();
 
 app.Run();
 
