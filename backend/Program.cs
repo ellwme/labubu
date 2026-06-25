@@ -38,6 +38,14 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 builder.Services.AddAuthorization();
 
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy =>
+        policy.AllowAnyOrigin()
+              .AllowAnyHeader()
+              .AllowAnyMethod());
+});
+
 builder.Services.AddEndpointsApiExplorer();
 
 builder.Services.AddSwaggerGen(options =>
@@ -56,7 +64,7 @@ builder.Services.AddSwaggerGen(options =>
         Scheme = "bearer",
         BearerFormat = "JWT",
         In = ParameterLocation.Header,
-        Description = "Введіть JWT-токен, отриманий з ендпоінта /auth/login."
+        Description = "пїЅпїЅпїЅпїЅпїЅпїЅ JWT-пїЅпїЅпїЅпїЅпїЅ, пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ /auth/login."
     });
 
     options.AddSecurityRequirement(doc => new OpenApiSecurityRequirement
@@ -70,17 +78,18 @@ var app = builder.Build();
 app.UseSwagger();
 app.UseSwaggerUI();
 
+app.UseCors();
 
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapGet("/", () => "MVP Back-End: CRUD-ендпоінти працюють!");
+app.MapGet("/", () => "MVP Back-End: CRUD-пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ!");
 
 // AUTH
 app.MapPost("/auth/register", async (RegisterDto dto, AppDbContext db) =>
 {
     if (await db.Users.AnyAsync(u => u.Email == dto.Email))
-        return Results.Conflict("Користувач з таким email вже існує.");
+        return Results.Conflict("пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅ email пїЅпїЅпїЅ пїЅпїЅпїЅпїЅ.");
 
     var user = new User
     {
@@ -164,11 +173,11 @@ app.MapPost("/box/open", async (ClaimsPrincipal principal, AppDbContext db) =>
     if (user is null) return Results.NotFound();
 
     if (user.Balance < BOX_PRICE)
-        return Results.BadRequest("Недостатньо коштів на балансі.");
+        return Results.BadRequest("пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ.");
 
     var figures = await db.Figures.ToListAsync();
     if (figures.Count == 0)
-        return Results.Problem("Каталог фігурок порожній.");
+        return Results.Problem("пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ.");
 
     var totalWeight = figures.Sum(f => f.DropWeight);
     var roll = Random.Shared.Next(0, totalWeight);
